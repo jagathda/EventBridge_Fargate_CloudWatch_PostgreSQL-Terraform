@@ -99,3 +99,14 @@ resource "aws_cloudwatch_log_group" "ecs_log_group" {
   name = "/ecs/message-logger"
   retention_in_days = 14
 }
+
+
+#EventBridge rule to trigger ECS task
+resource "aws_cloudwatch_event_rule" "ecs_event_rule" {
+  name = "ecs_event_rule"
+  description = "Trigger ECS fargate task"
+  event_pattern = jsonencode({
+    source = ["my.custom.source"],
+    "detail-type" = ["customDetailType"]
+  })
+}
