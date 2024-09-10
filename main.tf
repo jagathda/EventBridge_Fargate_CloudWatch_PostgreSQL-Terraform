@@ -161,3 +161,11 @@ resource "aws_iam_role_policy" "ecs_task_execution_from_eventbridge_policy" {
     ]
   })
 }
+
+#Create ECR repository
+resource "aws_ecr_repository" "message_logger_repo" {
+  name = "message-logger"
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+}
