@@ -110,3 +110,16 @@ resource "aws_cloudwatch_event_rule" "ecs_event_rule" {
     "detail-type" = ["customDetailType"]
   })
 }
+
+#IAM role for EventBridge to run ECS tasks
+resource "aws_iam_role" "eventbridge_invoke_ecs_role" {
+  name = "eventbridge_invoke_ecs_role"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+        Effect = "Allow",
+        Principal = { Service = "events.amazonaws.com"},
+        Action = "sts:AssumeRole"
+    }]
+  })
+}
