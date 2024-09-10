@@ -123,3 +123,21 @@ resource "aws_iam_role" "eventbridge_invoke_ecs_role" {
     }]
   })
 }
+
+#EventBridge target for ECS task
+resource "aws_cloudwatch_event_target" "ecs_event_target" {
+    rule = aws_cloudwatch_event_rule.ecs_event_rule.name
+    arn = aws_ecs_cluster.fargate_cluster.arn
+    role_arn  = aws_iam_role.eventbridge_invoke_ecs_role.arn
+
+    ecs_target {
+      task_definition_arn = aws_ecs_task_definition.fargate_task.arn
+      task_count = 1
+      launch_type = "FARGATE"
+      network_configuration {
+        subnets = [aws_subnet.public_subnet_1.id, aws_subnet.public_subnet_2.id]
+        security_groups = [aws_security_group.fargate_sg.id]
+        assign_public_ip = false
+      }
+    }
+}
