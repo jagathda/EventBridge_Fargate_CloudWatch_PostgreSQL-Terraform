@@ -78,7 +78,7 @@ resource "aws_ecs_task_definition" "fargate_task" {
 
   container_definitions = jsonencode([{
     name      = "message-logger-container"
-    image     = "533266984673.dkr.ecr.eu-north-1.amazonaws.com/message-logger:latest"
+    image     = "${aws_ecr_repository.message_logger_repo.repository_url}:latest"
     cpu       = 256
     memory    = 512
     essential = true
