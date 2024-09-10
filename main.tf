@@ -141,3 +141,23 @@ resource "aws_cloudwatch_event_target" "ecs_event_target" {
       }
     }
 }
+
+#Grant the EventBridge service
+resource "aws_iam_role_policy" "ecs_task_execution_from_eventbridge_policy" {
+  role = aws_iam_role.eventbridge_invoke_ecs_role.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+        {
+        Effect = "Allow",
+        Action = "ecs:RunTask",
+        Resource = aws_ecs_task_definition.fargate_task.arn
+    },
+    {
+        Effect = "Allow",
+        Action = "iam:PassRole",
+        Resource = aws_iam_role.ecs_task_execution_role.arn
+    }
+    ]
+  })
+}
