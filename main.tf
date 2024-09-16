@@ -150,25 +150,6 @@ resource "aws_cloudwatch_event_rule" "eventbridge_rule" {
   })
 }
 
-/*# Target for EventBridge rule to trigger ECS task
-resource "aws_cloudwatch_event_target" "ecs_target" {
-  rule      = aws_cloudwatch_event_rule.eventbridge_rule.name
-  arn       = aws_ecs_cluster.fargate_cluster.arn
-  role_arn  = aws_iam_role.eventbridge_invoke_ecs_role.arn
-
-  ecs_target {
-    task_definition_arn = aws_ecs_task_definition.fargate_task.arn
-    task_count          = 1
-    launch_type         = "FARGATE"
-    
-    network_configuration {
-      subnets          = [aws_subnet.public_subnet_1.id, aws_subnet.public_subnet_2.id]
-      security_groups  = [aws_security_group.fargate_sg.id]
-      assign_public_ip = true
-    }
-  }
-}*/
-
 # Target for EventBridge rule to trigger ECS task
 resource "aws_cloudwatch_event_target" "ecs_target" {
   rule      = aws_cloudwatch_event_rule.eventbridge_rule.name
@@ -233,3 +214,30 @@ resource "aws_iam_role_policy" "ecs_task_execution_from_eventbridge_policy" {
     ]
   })
 }
+
+# PostgreSQL RDS instance
+resource "aws_db_instance" "postgresql" {
+  identifier = "fargate-postgresql-db"
+  allocated_storage = 20
+  storage_type = "gp2"
+  engine = "postgres"
+  engine_version = "16.3-R2"
+  instance_class = "db.t3.micro"
+  db_name = "eventdb"
+  username = "dbuser"
+  password = "P@ssw0rd"
+  publicly_accessible = false
+  vpc_security_group_ids = [ aws_security_group.fargate_sg.id ]
+  skip_final_snapshot = true
+  db_subnet_group_name = aws_db_subnet_group.rds_subnet_group.name
+}
+
+# Subnet group for the RDS instance
+resource "aws_db_subnet_group" "rds_subnet_group" {
+  name = "rds-subnet-group"
+  subnet_ids = [ aws_subnet.public_subnet_1.id, aws_subnet.public_subnet_2.id ]
+
+  tags = {
+    Name = "RDS Subnet Group"
+  }
+} 
