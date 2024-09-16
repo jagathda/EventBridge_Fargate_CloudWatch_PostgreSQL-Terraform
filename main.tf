@@ -133,7 +133,25 @@ resource "aws_ecs_task_definition" "fargate_task" {
           "awslogs-region"        = "eu-north-1",
           "awslogs-stream-prefix" = "ecs"
         }
-      }
+      },
+      environment = [
+        {
+          name = "POSTGRES_HOST"
+          value = aws_db_instance.postgresql.address
+        },
+        {
+          name = "POSTGRES_DB"
+          value = "eventdb"
+        },
+        {
+          name = "POSTGRES_USER"
+          value = "dbuser"
+        },
+        {
+          name = "POSTGRES_PASSWORD"
+          value = "P@ssw0rd"
+        }
+      ]
     }
   ])
 }
