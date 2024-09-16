@@ -239,11 +239,11 @@ resource "aws_db_instance" "postgresql" {
   allocated_storage = 20
   storage_type = "gp2"
   engine = "postgres"
-  engine_version = "16.3-R2"
+  engine_version = "16.3"
   instance_class = "db.t3.micro"
   db_name = "eventdb"
   username = "dbuser"
-  password = "P@ssw0rd"
+  password = "Pa$$w0rd"
   publicly_accessible = false
   vpc_security_group_ids = [ aws_security_group.fargate_sg.id ]
   skip_final_snapshot = true
