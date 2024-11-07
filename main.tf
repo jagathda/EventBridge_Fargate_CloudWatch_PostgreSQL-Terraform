@@ -1,261 +1,157 @@
-# Configure provider
 provider "aws" {
-  profile = "cliuser"
-  region  = "eu-north-1"
+  region = "eu-north-1"  # Update to your desired region
 }
 
-#################################################################
-# VPC for networking
-resource "aws_vpc" "fargate_vpc" {
+# Create a VPC
+resource "aws_vpc" "my_vpc" {
   cidr_block = "10.0.0.0/16"
 }
 
-# Public subnets
+# Create Public Subnets
 resource "aws_subnet" "public_subnet_1" {
-  vpc_id            = aws_vpc.fargate_vpc.id
-  cidr_block        = "10.0.1.0/24"
-  availability_zone = "eu-north-1a"
+  vpc_id                  = aws_vpc.my_vpc.id
+  cidr_block              = "10.0.1.0/24"
+  availability_zone       = "eu-north-1a"  # Ensure using different AZs
+  map_public_ip_on_launch = true
 }
 
 resource "aws_subnet" "public_subnet_2" {
-  vpc_id            = aws_vpc.fargate_vpc.id
-  cidr_block        = "10.0.2.0/24"
-  availability_zone = "eu-north-1b"
+  vpc_id                  = aws_vpc.my_vpc.id
+  cidr_block              = "10.0.2.0/24"
+  availability_zone       = "eu-north-1b"  # Ensure using different AZs
+  map_public_ip_on_launch = true
 }
 
-# Route table for public subnets
-resource "aws_route_table" "public_route_table" {
-  vpc_id = aws_vpc.fargate_vpc.id
-
-  route {
-    cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.fargate_igw.id
-  }
+# Create Private Subnets
+resource "aws_subnet" "private_subnet_1" {
+  vpc_id            = aws_vpc.my_vpc.id
+  cidr_block        = "10.0.3.0/24"
+  availability_zone = "eu-north-1a"  # Ensure using different AZs
 }
 
-# Associate the route table with public subnets
-resource "aws_route_table_association" "public_subnet_1_association" {
-  subnet_id      = aws_subnet.public_subnet_1.id
-  route_table_id = aws_route_table.public_route_table.id
+resource "aws_subnet" "private_subnet_2" {
+  vpc_id            = aws_vpc.my_vpc.id
+  cidr_block        = "10.0.4.0/24"
+  availability_zone = "eu-north-1b"  # Ensure using different AZs
 }
 
-resource "aws_route_table_association" "public_subnet_2_association" {
-  subnet_id      = aws_subnet.public_subnet_2.id
-  route_table_id = aws_route_table.public_route_table.id
+# Create a Security Group for the RDS
+resource "aws_security_group" "db_security_group" {
+  vpc_id = aws_vpc.my_vpc.id
 }
 
-# Internet gateway for VPC
-resource "aws_internet_gateway" "fargate_igw" {
-  vpc_id = aws_vpc.fargate_vpc.id
+# Create a Secrets Manager Secret for DB Password
+resource "aws_secretsmanager_secret" "db_password" {
+  name = "mydatabase_password"
 }
 
-# Security group for Fargate
-resource "aws_security_group" "fargate_sg" {
-  vpc_id = aws_vpc.fargate_vpc.id
-
-  # You can remove the ingress rule for port 80 if not needed
-  ingress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"  # This denies all inbound traffic
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]  # Allow all outbound traffic
-  }
+# Create a Secrets Manager Secret Version for DB Password
+resource "aws_secretsmanager_secret_version" "db_password_version" {
+  secret_id     = aws_secretsmanager_secret.db_password.id
+  secret_string = jsonencode({
+    password = "temporaryPassword123!"  # Update to your desired password
+  })
 }
 
-#################################################################
-# ECS cluster
-resource "aws_ecs_cluster" "fargate_cluster" {
-  name = "fargate-cluster-1"
+# Create a DB Subnet Group for RDS
+resource "aws_db_subnet_group" "my_db_subnet_group" {
+  name       = "my-db-subnet-group"
+  subnet_ids = [aws_subnet.private_subnet_1.id, aws_subnet.private_subnet_2.id]
 }
 
-# IAM role for ECS task execution
+# Create an RDS DB Instance
+resource "aws_db_instance" "postgres_instance" {
+  allocated_storage      = 20
+  engine               = "postgres"
+  engine_version       = "16.3"
+  instance_class       = "db.t3.micro"  # Use t3.micro for compatibility
+  db_name              = "mydatabase"    # Use db_name instead of name
+  username             = "dbadmin"
+  password             = jsondecode(aws_secretsmanager_secret_version.db_password_version.secret_string)["password"]
+  skip_final_snapshot  = true
+  vpc_security_group_ids = [aws_security_group.db_security_group.id]
+  db_subnet_group_name = aws_db_subnet_group.my_db_subnet_group.name
+}
+
+# Create ECS Cluster
+resource "aws_ecs_cluster" "my_cluster" {
+  name = "my-ecs-cluster"
+}
+
+# Define IAM Role for ECS Task Execution
 resource "aws_iam_role" "ecs_task_execution_role" {
   name = "ecsTaskExecutionRole"
   assume_role_policy = jsonencode({
-    Version = "2012-10-17",
+    Version = "2012-10-17"
     Statement = [
       {
-        Effect = "Allow",
+        Action = "sts:AssumeRole"
         Principal = {
           Service = "ecs-tasks.amazonaws.com"
-        },
-        Action = "sts:AssumeRole"
+        }
+        Effect = "Allow"
       }
     ]
   })
+
+  managed_policy_arns = [
+    "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+  ]
 }
 
-# Attach required policies to ECS task role
-resource "aws_iam_role_policy_attachment" "ecs_task_execution_role_policy" {
-  role       = aws_iam_role.ecs_task_execution_role.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
-}
-
-# Create a CloudWatch Log Group for ECS task logs
-resource "aws_cloudwatch_log_group" "ecs_log_group" {
-  name              = "/ecs/message-logger"
-  retention_in_days = 7  # Specify the number of days to retain the logs
-}
-
-# ECR Repository for Docker Image
-resource "aws_ecr_repository" "message_logger_repo" {
-  name = "message-logger"
-  image_scanning_configuration {
-    scan_on_push = true
-  }
+# Create Security Group for Fargate tasks
+resource "aws_security_group" "fargate_security_group" {
+  vpc_id = aws_vpc.my_vpc.id
 }
 
 # ECS Task Definition
-resource "aws_ecs_task_definition" "fargate_task" {
-  family                   = "message-logger"
+resource "aws_ecs_task_definition" "task_definition" {
+  family                   = "my-task-def"
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
-  cpu                      = 256
-  memory                   = 512
-  execution_role_arn       = aws_iam_role.ecs_task_execution_role.arn
-  container_definitions    = jsonencode([
-    {
-      name      = "message-logger-container",
-      image     = aws_ecr_repository.message_logger_repo.repository_url,
-      essential = true,
-      # Add log configuration here
-      logConfiguration = {
-        logDriver = "awslogs",
-        options = {
-          "awslogs-group"         = aws_cloudwatch_log_group.ecs_log_group.name,
-          "awslogs-region"        = "eu-north-1",
-          "awslogs-stream-prefix" = "ecs"
-        }
-      },
-      environment = [
-        {
-          name = "POSTGRES_HOST"
-          value = aws_db_instance.postgresql.address
-        },
-        {
-          name = "POSTGRES_DB"
-          value = "eventdb"
-        },
-        {
-          name = "POSTGRES_USER"
-          value = "dbuser"
-        },
-        {
-          name = "POSTGRES_PASSWORD"
-          value = "P@ssw0rd"
-        }
-      ]
-    }
-  ])
-}
+  cpu                      = "256"  # Task CPU
+  memory                   = "512"  # Task memory
 
-#################################################################
-# EventBridge rule to trigger ECS task
-resource "aws_cloudwatch_event_rule" "eventbridge_rule" {
-  name        = "eventbridge-rule"
-  description = "Rule to trigger ECS Fargate task"
+  container_definitions = jsonencode([{
+    name      = "my-container"
+    image     = "YOUR_ECR_REPOSITORY_URI"  # Update to your ECR repository URI
+    essential = true
 
-  event_pattern = jsonencode({
-    "source": ["custom.my-application"],  
-    "detail-type": ["myDetailType"]
-  })
-}
-
-# Target for EventBridge rule to trigger ECS task
-resource "aws_cloudwatch_event_target" "ecs_target" {
-  rule      = aws_cloudwatch_event_rule.eventbridge_rule.name
-  arn       = aws_ecs_cluster.fargate_cluster.arn
-  role_arn  = aws_iam_role.eventbridge_invoke_ecs_role.arn
-
-  ecs_target {
-    task_definition_arn = aws_ecs_task_definition.fargate_task.arn
-    task_count          = 1
-    launch_type         = "FARGATE"
-    
-    network_configuration {
-      subnets          = [aws_subnet.public_subnet_1.id, aws_subnet.public_subnet_2.id]
-      security_groups  = [aws_security_group.fargate_sg.id]
-      assign_public_ip = true
-    }
-  }
-
-  # Use input_transformer to pass only the "Detail" part of the event
-  input_transformer {
-    input_paths = {
-      "detail" = "$.detail"  # Extract the "Detail" field of the event
-    }
-    input_template = "{\"detail\": <detail>}"  # Pass it as JSON to the task
-  }
-}
-
-#################################################################
-# IAM Role for EventBridge to invoke ECS
-resource "aws_iam_role" "eventbridge_invoke_ecs_role" {
-  name = "eventbridgeInvokeEcsRole"
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17",
-    Statement = [
+    environment = [
       {
-        Effect = "Allow",
-        Principal = {
-          Service = "events.amazonaws.com"
-        },
-        Action = "sts:AssumeRole"
-      }
-    ]
-  })
-}
-
-# Policy to allow EventBridge to invoke ECS tasks
-resource "aws_iam_role_policy" "ecs_task_execution_from_eventbridge_policy" {
-  role = aws_iam_role.eventbridge_invoke_ecs_role.name
-  policy = jsonencode({
-    Version = "2012-10-17",
-    Statement = [
-      {
-        Effect = "Allow",
-        Action = "ecs:RunTask",
-        Resource = aws_ecs_task_definition.fargate_task.arn
+        name  = "PG_HOST"
+        value = aws_db_instance.postgres_instance.endpoint
       },
       {
-        Effect = "Allow",
-        Action = "iam:PassRole",
-        Resource = aws_iam_role.ecs_task_execution_role.arn
+        name  = "PG_USER"
+        value = "dbadmin"
+      },
+      {
+        name  = "PG_DB"
+        value = "mydatabase"
+      },
+      {
+        name  = "PG_PORT"
+        value = "5432"
+      },
+      {
+        name  = "PG_PASSWORD"
+        value = jsondecode(aws_secretsmanager_secret_version.db_password_version.secret_string)["password"]
       }
     ]
-  })
+
+    log_configuration = {
+      log_driver = "awslogs"
+      options = {
+        "awslogs-group"         = "/ecs/MyAppLogs"
+        "awslogs-region"       = "eu-north-1"  # Update to your region
+        "awslogs-stream-prefix" = "ecs"
+      }
+    }
+  }])
 }
 
-# PostgreSQL RDS instance
-resource "aws_db_instance" "postgresql" {
-  identifier = "fargate-postgresql-db"
-  allocated_storage = 20
-  storage_type = "gp2"
-  engine = "postgres"
-  engine_version = "16.3"
-  instance_class = "db.t3.micro"
-  db_name = "eventdb"
-  username = "dbuser"
-  password = "Pa$$w0rd"
-  publicly_accessible = false
-  vpc_security_group_ids = [ aws_security_group.fargate_sg.id ]
-  skip_final_snapshot = true
-  db_subnet_group_name = aws_db_subnet_group.rds_subnet_group.name
+# Output the RDS endpoint
+output "rds_endpoint" {
+  value = aws_db_instance.postgres_instance.endpoint
 }
-
-# Subnet group for the RDS instance
-resource "aws_db_subnet_group" "rds_subnet_group" {
-  name = "rds-subnet-group"
-  subnet_ids = [ aws_subnet.public_subnet_1.id, aws_subnet.public_subnet_2.id ]
-
-  tags = {
-    Name = "RDS Subnet Group"
-  }
-} 
